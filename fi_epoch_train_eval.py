@@ -110,3 +110,13 @@ for epoch in range(1, EPOCHS + 1):
         f"{hits[5]:.4f} | "
         f"{mrr:.4f}"
     )
+
+import torch
+
+torch.save({
+    "gat": gat.state_dict(),
+    "pool": pool.state_dict(),
+    "scorer": scorer.state_dict()
+}, "trained_model.pt")
+
+print("✔ Trained KG model saved")
