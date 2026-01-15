@@ -5,6 +5,7 @@ from torch_geometric.data import Data
 
 from kg_utils import extract_role_aware_context, mask_context
 from models import TripletGAT, ContextAttentionPooling, TreatmentScorer
+from triplet_encoder import TripletEncoder
 
 
 class TreatmentPredictionEngine:
@@ -17,6 +18,20 @@ class TreatmentPredictionEngine:
         self.df.columns = ["head", "relation", "tail"]
 
         # ======================
+        # Entity & relation vocab
+        # ======================
+        entities = set(self.df["head"]).union(set(self.df["tail"]))
+        relations = set(self.df["relation"])
+
+        # Special tokens
+        entities.add("[MASK]")
+        relations.add("[MASK]")
+
+
+        self.entity2id = {e: i for i, e in enumerate(sorted(entities))}
+        self.relation2id = {r: i for i, r in enumerate(sorted(relations))}
+
+        # ======================
         # Treatment vocabulary
         # ======================
         self.treatments = sorted(
@@ -27,6 +42,12 @@ class TreatmentPredictionEngine:
         # ======================
         # Models
         # ======================
+        self.encoder = TripletEncoder(
+            self.entity2id,
+            self.relation2id,
+            emb_dim=128
+        )
+
         self.gat = TripletGAT()
         self.pool = ContextAttentionPooling(64)
         self.scorer = TreatmentScorer(len(self.treatments), 64)
@@ -40,32 +61,21 @@ class TreatmentPredictionEngine:
         if os.path.exists(model_path):
             ckpt = torch.load(model_path, map_location="cpu")
 
-            # ---- Load GAT & Pool (exact match) ----
             self.gat.load_state_dict(ckpt["gat"])
             self.pool.load_state_dict(ckpt["pool"])
 
-            # ---- Load scorer safely (vocab size mismatch fix) ----
             scorer_state = ckpt["scorer"]
+            pretrained_weight = scorer_state["treatment_embeddings.weight"]
+            current_weight = self.scorer.treatment_embeddings.weight
 
-            if "treatment_embeddings.weight" in scorer_state:
-                pretrained_weight = scorer_state["treatment_embeddings.weight"]
-                current_weight = self.scorer.treatment_embeddings.weight
+            min_size = min(pretrained_weight.size(0), current_weight.size(0))
+            current_weight.data[:min_size] = pretrained_weight[:min_size]
 
-                min_size = min(
-                    pretrained_weight.size(0),
-                    current_weight.size(0)
-                )
-
-                current_weight.data[:min_size] = pretrained_weight[:min_size]
-
-                print(f"✔ Loaded trained KG model (treatments copied: {min_size})")
-            else:
-                raise RuntimeError(
-                    "Checkpoint scorer does not contain treatment_embeddings.weight"
-                )
+            print(f"✔ Loaded trained KG model (treatments copied: {min_size})")
         else:
             print("⚠ Using untrained KG model")
 
+        self.encoder.eval()
         self.gat.eval()
         self.pool.eval()
         self.scorer.eval()
@@ -94,8 +104,8 @@ class TreatmentPredictionEngine:
         if len(masked) == 0:
             raise ValueError(f"No context found for disease: {disease}")
 
-        # -------- Triplet embeddings --------
-        x = torch.randn(len(masked), 128)
+        # -------- Semantic triplet embeddings (FIXED) --------
+        x = self.encoder(masked)
         edge_index = self._build_graph(len(masked))
 
         data = Data(x=x, edge_index=edge_index)
