@@ -1,0 +1,10 @@
+{
+    "affectspart": 0,
+    "applicableto": 1,
+    "cooccurswith": 2,
+    "hasdisease": 3,
+    "hassymptom": 4,
+    "showssymptom": 5,
+    "similarto": 6,
+    "treatedby": 7
+}
