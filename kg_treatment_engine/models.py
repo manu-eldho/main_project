@@ -24,11 +24,13 @@ class ContextAttentionPooling(nn.Module):
         w = F.softmax(self.attn(Z), dim=0)
         return (w * Z).sum(dim=0)
 
+import torch.nn as nn
 
 class TreatmentScorer(nn.Module):
     def __init__(self, num_treatments, dim):
         super().__init__()
-        self.emb = nn.Embedding(num_treatments, dim)
+        # IMPORTANT: keep the old name for compatibility
+        self.treatment_embeddings = nn.Embedding(num_treatments, dim)
 
     def forward(self, disease_emb):
-        return torch.matmul(self.emb.weight, disease_emb)
+        return self.treatment_embeddings.weight @ disease_emb
